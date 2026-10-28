@@ -8,7 +8,7 @@ A browser tool for xLights shows. It scans your rendered sequences and shows whi
 
 1. **Pick your show folder** (`XLIGHTS\Show DIR`). The tool reads your layout (`xlights_rgbeffects.xml` and `xlights_networks.xml`) to find each moving head's tilt and dimmer channels.
 2. **Set the limit.** This is the lowest tilt DMX value (0–255) the beams may reach. You can override it per head.
-3. **Scan.** The tool reads every rendered `.fseq` and records each head's tilt, frame by frame, while its beam is on. Dips shorter than the time you set (250 ms by default) are ignored, because a head can't swing that fast. For example, a tilt effect that ends a few frames before the dimmer does would otherwise read as a drop to 0. This is read-only. Big shows take 10–30 seconds per song.
+3. **Scan.** The tool reads every rendered `.fseq` and records each head's tilt, frame by frame, while its beam is on. A tilt of 0 means nothing is sequenced on that head at that moment, so it's skipped, and only real tilt commands are compared with the limit. In a sequence that already has the whole-song lift, "nothing sequenced" reads as the lift value, so that's skipped too. This is read-only. Big shows take 10–30 seconds per song.
 4. **Fix.** For each sequence that dips too low, the tool works out the lift, which you can edit. Then you tick the sequences to change and confirm. It:
    - backs up each `.xsq` to `Show DIR\Tilt Lift Backups\<date time>\` first
    - adds one DMX effect across the whole song on `MH Tilt` › Strand 1, blended **Additive**, with DMX1–DMX8 set to each head's lift. If that lift already exists, its values are raised instead.

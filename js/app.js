@@ -39,13 +39,12 @@ let lastEdit = null;     // {stamp, items:[{row, backupHandle}]}
 function settings() {
   const minT = clamp(parseInt($('minT').value, 10), 0, 255, 0);
   const mx = parseInt($('maxT').value, 10);
-  return { minT, maxT: Number.isFinite(mx) ? clamp(mx, 0, 255, 255) : null, litOnly: $('litOnly').checked,
-    ignoreMs: clamp(parseInt($('ignoreMs').value, 10), 0, 5000, 0) };
+  return { minT, maxT: Number.isFinite(mx) ? clamp(mx, 0, 255, 255) : null, litOnly: $('litOnly').checked };
 }
 function clamp(v, a, b, d) { return Number.isFinite(v) ? Math.min(b, Math.max(a, v)) : d; }
 function saveSettings() {
   store.set('settings', {
-    minT: $('minT').value, maxT: $('maxT').value, litOnly: $('litOnly').checked, ignoreMs: $('ignoreMs').value,
+    minT: $('minT').value, maxT: $('maxT').value, litOnly: $('litOnly').checked,
     sameLift: $('sameLift').checked, margin: $('margin').value, addAll: $('addAll').checked,
     heads: Object.fromEntries(heads.map((h) => [h.name, { on: h.on, own: h.own }])),
   });
@@ -55,7 +54,6 @@ function loadSettings() {
   if (s.minT !== undefined) $('minT').value = s.minT;
   if (s.maxT !== undefined) $('maxT').value = s.maxT;
   if (s.litOnly !== undefined) $('litOnly').checked = s.litOnly;
-  if (s.ignoreMs !== undefined) $('ignoreMs').value = s.ignoreMs;
   if (s.sameLift !== undefined) $('sameLift').checked = s.sameLift;
   if (s.margin !== undefined) $('margin').value = s.margin;
   if (s.addAll !== undefined) $('addAll').checked = s.addAll;
@@ -95,52 +93,42 @@ function renderGauge() {
 }
 
 // ---------- results math ----------
-// Where the head can actually be: a moving head can't follow a split-second
-// change, so on each frame it is taken to be no lower than the highest tilt it
-// was sent over the last `k` frames. k = 1 uses every frame as-is.
-const settledCache = new WeakMap();
-function settledTilt(hr, k) {
-  let byK = settledCache.get(hr);
-  if (!byK) { byK = {}; settledCache.set(hr, byK); }
-  if (byK[k]) return byK[k];
-  const t = hr.tilt, n = t.length, out = new Uint8Array(n);
-  if (k <= 1) out.set(t);
-  else {
-    const dq = new Int32Array(n); let head = 0, tail = 0; // indices, tilt values decreasing
-    for (let i = 0; i < n; i++) {
-      while (tail > head && t[dq[tail - 1]] <= t[i]) tail--;
-      dq[tail++] = i;
-      if (dq[head] <= i - k) head++;
-      out[i] = t[dq[head]];
-    }
-  }
-  return (byK[k] = out);
-}
-function headStats(hr, h, s, step) {
+// A tilt value of 0 in the render means nothing is sequenced on that head's
+// tilt at that moment (no effect on the head, MH Tilt or a group), not a command
+// to point down. Once a sequence has the whole-song Additive lift, "nothing"
+// reads as the lift value instead, so that value is skipped too.
+// Only real tilt commands are compared with the limit.
+function headStats(hr, h, s, empty) {
   if (hr.missing) return { missing: true };
-  const k = Math.max(1, Math.ceil(s.ignoreMs / (step || 50)));
-  const st = settledTilt(hr, k), raw = hr.tilt, on = hr.on, n = raw.length;
+  const raw = hr.tilt, on = hr.on, n = raw.length;
   const lim = headLimit(h, s);
-  let low = -1, high = -1, cnt = 0, below = 0, dip = -1, over = 0;
+  let low = -1, high = -1, cnt = 0, lit = 0, below = 0, dip = -1, over = 0;
   for (let i = 0; i < n; i++) {
     if (s.litOnly && !on[i]) continue;
+    lit++;
+    const v = raw[i];
+    if (v === 0 || v === empty) continue;
     cnt++;
-    const v = st[i];
     if (low < 0 || v < low) low = v;
-    if (raw[i] > high) high = raw[i];
+    if (v > high) high = v;
     if (v < lim) { below++; if (dip < 0) dip = i; }
-    if (s.maxT !== null && raw[i] > s.maxT) over++;
+    if (s.maxT !== null && v > s.maxT) over++;
   }
-  if (!cnt) return { never: true };
+  if (!lit) return { never: true };
+  if (!cnt) return { unsequenced: true };
   return { low, high, n: cnt, below, dip, add: Math.max(0, lim - low), over };
+}
+function emptyValue(r, h) {
+  const c = fixCache[r.rel];
+  return c && c.hasLift && h.liftIndex >= 0 ? c.current[h.liftIndex] : 0;
 }
 function seqStats(r, s) {
   const per = [];
   let add = 0, worst = null, dip = -1, high = -1, over = 0, any = false, lowest = 999;
   r.heads.forEach((hr, i) => {
     const h = heads[i]; if (!h || !h.on) return;
-    const st = headStats(hr, h, s, r.step); per.push({ h, st });
-    if (st.missing || st.never) return;
+    const st = headStats(hr, h, s, emptyValue(r, h)); per.push({ h, st });
+    if (st.missing || st.never || st.unsequenced) return;
     any = true;
     if (st.low < lowest) lowest = st.low;
     if (st.add > add) { add = st.add; worst = h.name; }
@@ -150,7 +138,7 @@ function seqStats(r, s) {
   let status;
   if (r.error) status = ['bad', 'Could not read'];
   else if (!r.heads.length || r.heads.every((x) => x.missing)) status = ['dim', 'Heads not in file'];
-  else if (!any) status = ['dim', s.litOnly ? 'Heads never on' : 'No tilt data'];
+  else if (!any) status = ['dim', per.some((p) => p.st.unsequenced) ? 'No tilt sequenced' : (s.litOnly ? 'Heads never on' : 'No tilt data')];
   else if (add > 0) status = ['bad', 'Too low'];
   else if (over > 0) status = ['warn', 'Too high'];
   else status = ['ok', 'OK'];
@@ -205,6 +193,7 @@ function renderResults() {
       const inner = r.error ? `<p class="msg err">${esc(r.error)}</p>` : `<div class="tablebox"><table><thead><tr><th>Head</th><th class="num">Limit</th><th class="num">Lowest</th><th class="num">Highest</th><th class="num">Add</th><th class="num">Time too low</th><th class="num">First dip</th></tr></thead><tbody>${
         st.per.map(({ h, st: x }) => x.missing ? `<tr><td>${esc(h.name)}</td><td colspan="6" class="muted">Not in this render file</td></tr>`
           : x.never ? `<tr><td>${esc(h.name)}</td><td colspan="6" class="muted">Never on in this sequence</td></tr>`
+          : x.unsequenced ? `<tr><td>${esc(h.name)}</td><td colspan="6" class="muted">Nothing sequenced on tilt while it's on</td></tr>`
           : `<tr><td>${esc(h.name)}</td><td class="num">${headLimit(h, s)}</td><td class="num">${x.low}</td><td class="num">${x.high}</td><td class="num">${x.add ? `<span class="add">+${x.add}</span>` : 0}</td><td class="num">${(x.below * r.step / 1000).toFixed(1)}s</td><td class="num">${fmtTime(x.dip, r.step)}</td></tr>`).join('')
       }</tbody></table></div>`;
       d.innerHTML = `<td colspan="6">${inner}</td>`;
@@ -428,6 +417,7 @@ async function buildFix() {
       };
     } catch (err) { fixCache[r.rel] = { cant: 'Could not read the .xsq: ' + err.message }; }
   }
+  renderResults();
   renderFix();
 }
 const userAdds = {}; // rel -> {same: n} or {per: [..]}
@@ -453,7 +443,7 @@ function computeFix() {
     const need = new Array(count).fill(0);
     const notOn = [];
     st.per.forEach(({ h, st: x }) => {
-      if (x.missing || x.never || !x.add) return;
+      if (x.missing || x.never || x.unsequenced || !x.add) return;
       if (h.liftIndex < 0 || h.liftIndex >= count) { notOn.push(h.name); return; }
       need[h.liftIndex] = Math.max(need[h.liftIndex], x.add + margin);
     });
@@ -646,7 +636,7 @@ async function undo() {
 
 // ---------- wiring ----------
 function changed() { saveSettings(); renderGauge(); renderResults(); renderFix(); }
-['minT', 'maxT', 'margin', 'ignoreMs'].forEach((id) => $(id).addEventListener('input', changed));
+['minT', 'maxT', 'margin'].forEach((id) => $(id).addEventListener('input', changed));
 ['litOnly', 'sameLift', 'addAll'].forEach((id) => $(id).addEventListener('change', () => { if (id === 'addAll') for (const k in userAdd) delete userAdd[k]; changed(); }));
 $('onlyBad').addEventListener('change', renderResults);
 

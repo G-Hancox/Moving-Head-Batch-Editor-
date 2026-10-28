@@ -40,11 +40,8 @@
       <div class="tick" id="tickLo"></div><div class="tick hi" id="tickHi" hidden></div>
       <span class="l0">0</span><span class="l255">255</span><span class="lab" id="labLo"></span>
     </div>
-    <div class="row">
-      <label class="check" for="litOnly"><input type="checkbox" id="litOnly" checked> Only count tilt while the beam is on (dimmer above 0)</label>
-      <label class="check" for="ignoreMs" style="align-items:center">Ignore dips shorter than <input type="number" id="ignoreMs" min="0" max="5000" step="50" value="250"> ms</label>
-    </div>
-    <p class="note">A head can't swing in a split second, so a tilt glitch of a few frames doesn't move the beam. This often happens when a tilt effect ends a frame or two before the dimmer does. Set the dip time to 0 to count every frame.</p>
+    <label class="check" for="litOnly"><input type="checkbox" id="litOnly" checked> Only count tilt while the beam is on (dimmer above 0)</label>
+    <p class="note">Moments with nothing sequenced on a head's tilt (the render shows 0) are skipped, so only real tilt commands are compared with your limit. In sequences that already have the whole-song lift, "nothing sequenced" shows up as the lift value, so that's skipped too.</p>
     <div class="tablebox">
       <table>
         <thead><tr><th>Check</th><th>Head</th><th class="num">Tilt ch</th><th class="num">Dimmer ch</th><th class="num">MH Tilt ch</th><th class="num">Own lowest</th></tr></thead>
