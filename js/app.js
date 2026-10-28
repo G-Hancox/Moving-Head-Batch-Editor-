@@ -39,12 +39,13 @@ let lastEdit = null;     // {stamp, items:[{row, backupHandle}]}
 function settings() {
   const minT = clamp(parseInt($('minT').value, 10), 0, 255, 0);
   const mx = parseInt($('maxT').value, 10);
-  return { minT, maxT: Number.isFinite(mx) ? clamp(mx, 0, 255, 255) : null, litOnly: $('litOnly').checked };
+  return { minT, maxT: Number.isFinite(mx) ? clamp(mx, 0, 255, 255) : null, litOnly: $('litOnly').checked,
+    ignoreMs: clamp(parseInt($('ignoreMs').value, 10), 0, 5000, 0) };
 }
 function clamp(v, a, b, d) { return Number.isFinite(v) ? Math.min(b, Math.max(a, v)) : d; }
 function saveSettings() {
   store.set('settings', {
-    minT: $('minT').value, maxT: $('maxT').value, litOnly: $('litOnly').checked,
+    minT: $('minT').value, maxT: $('maxT').value, litOnly: $('litOnly').checked, ignoreMs: $('ignoreMs').value,
     sameLift: $('sameLift').checked, margin: $('margin').value, addAll: $('addAll').checked,
     heads: Object.fromEntries(heads.map((h) => [h.name, { on: h.on, own: h.own }])),
   });
@@ -54,6 +55,7 @@ function loadSettings() {
   if (s.minT !== undefined) $('minT').value = s.minT;
   if (s.maxT !== undefined) $('maxT').value = s.maxT;
   if (s.litOnly !== undefined) $('litOnly').checked = s.litOnly;
+  if (s.ignoreMs !== undefined) $('ignoreMs').value = s.ignoreMs;
   if (s.sameLift !== undefined) $('sameLift').checked = s.sameLift;
   if (s.margin !== undefined) $('margin').value = s.margin;
   if (s.addAll !== undefined) $('addAll').checked = s.addAll;
@@ -93,25 +95,51 @@ function renderGauge() {
 }
 
 // ---------- results math ----------
-function headStats(hr, h, s) {
+// Where the head can actually be: a moving head can't follow a split-second
+// change, so on each frame it is taken to be no lower than the highest tilt it
+// was sent over the last `k` frames. k = 1 uses every frame as-is.
+const settledCache = new WeakMap();
+function settledTilt(hr, k) {
+  let byK = settledCache.get(hr);
+  if (!byK) { byK = {}; settledCache.set(hr, byK); }
+  if (byK[k]) return byK[k];
+  const t = hr.tilt, n = t.length, out = new Uint8Array(n);
+  if (k <= 1) out.set(t);
+  else {
+    const dq = new Int32Array(n); let head = 0, tail = 0; // indices, tilt values decreasing
+    for (let i = 0; i < n; i++) {
+      while (tail > head && t[dq[tail - 1]] <= t[i]) tail--;
+      dq[tail++] = i;
+      if (dq[head] <= i - k) head++;
+      out[i] = t[dq[head]];
+    }
+  }
+  return (byK[k] = out);
+}
+function headStats(hr, h, s, step) {
   if (hr.missing) return { missing: true };
-  const src = s.litOnly ? hr.lit : hr.all, first = s.litOnly ? hr.firstLit : hr.firstAll;
-  let low = -1, high = -1, n = 0;
-  for (let v = 0; v < 256; v++) if (src[v]) { if (low < 0) low = v; high = v; n += src[v]; }
-  if (low < 0) return { never: true };
+  const k = Math.max(1, Math.ceil(s.ignoreMs / (step || 50)));
+  const st = settledTilt(hr, k), raw = hr.tilt, on = hr.on, n = raw.length;
   const lim = headLimit(h, s);
-  let below = 0, dip = -1;
-  for (let v = 0; v < lim && v < 256; v++) if (src[v]) { below += src[v]; if (dip < 0 || first[v] < dip) dip = first[v]; }
-  let over = 0;
-  if (s.maxT !== null) for (let v = s.maxT + 1; v < 256; v++) over += src[v];
-  return { low, high, n, below, dip, add: Math.max(0, lim - low), over };
+  let low = -1, high = -1, cnt = 0, below = 0, dip = -1, over = 0;
+  for (let i = 0; i < n; i++) {
+    if (s.litOnly && !on[i]) continue;
+    cnt++;
+    const v = st[i];
+    if (low < 0 || v < low) low = v;
+    if (raw[i] > high) high = raw[i];
+    if (v < lim) { below++; if (dip < 0) dip = i; }
+    if (s.maxT !== null && raw[i] > s.maxT) over++;
+  }
+  if (!cnt) return { never: true };
+  return { low, high, n: cnt, below, dip, add: Math.max(0, lim - low), over };
 }
 function seqStats(r, s) {
   const per = [];
   let add = 0, worst = null, dip = -1, high = -1, over = 0, any = false, lowest = 999;
   r.heads.forEach((hr, i) => {
     const h = heads[i]; if (!h || !h.on) return;
-    const st = headStats(hr, h, s); per.push({ h, st });
+    const st = headStats(hr, h, s, r.step); per.push({ h, st });
     if (st.missing || st.never) return;
     any = true;
     if (st.low < lowest) lowest = st.low;
@@ -618,7 +646,7 @@ async function undo() {
 
 // ---------- wiring ----------
 function changed() { saveSettings(); renderGauge(); renderResults(); renderFix(); }
-['minT', 'maxT', 'margin'].forEach((id) => $(id).addEventListener('input', changed));
+['minT', 'maxT', 'margin', 'ignoreMs'].forEach((id) => $(id).addEventListener('input', changed));
 ['litOnly', 'sameLift', 'addAll'].forEach((id) => $(id).addEventListener('change', () => { if (id === 'addAll') for (const k in userAdd) delete userAdd[k]; changed(); }));
 $('onlyBad').addEventListener('change', renderResults);
 

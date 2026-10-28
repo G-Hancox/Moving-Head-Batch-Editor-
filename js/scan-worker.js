@@ -5,6 +5,7 @@ self.onmessage = async (e) => {
   try {
     let last = 0;
     const r = await scanFseq(file, heads, (p) => { const now = Date.now(); if (now - last > 300) { last = now; self.postMessage({ id, progress: p }); } });
-    self.postMessage({ id, result: r });
+    const transfer = r.heads.filter((h) => !h.missing).flatMap((h) => [h.tilt.buffer, h.on.buffer]);
+    self.postMessage({ id, result: r }, [...new Set(transfer)]);
   } catch (err) { self.postMessage({ id, error: String((err && err.message) || err) }); }
 };

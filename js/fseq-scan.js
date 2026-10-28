@@ -42,8 +42,8 @@ async function scanFseq(file, heads, onProgress) {
   };
   const H = heads.map((hd) => ({
     t: mapCh(hd.tilt), d: mapCh(hd.dim),
-    lit: new Uint32Array(256), all: new Uint32Array(256),
-    firstLit: new Int32Array(256).fill(-1), firstAll: new Int32Array(256).fill(-1),
+    // frame-by-frame tilt value and whether the beam was on (dimmer above 0)
+    tilt: new Uint8Array(h.frames), on: new Uint8Array(h.frames),
   }));
   const cc = h.chcount;
   let frame = 0;
@@ -53,8 +53,9 @@ async function scanFseq(file, heads, onProgress) {
       const t0 = x.t, d0 = x.d;
       for (let f = 0; f < nf; f++) {
         const b = f * cc, t = d[b + t0];
-        x.all[t]++; if (x.firstAll[t] < 0) x.firstAll[t] = frame + f;
-        if (d0 < 0 || d[b + d0] > 0) { x.lit[t]++; if (x.firstLit[t] < 0) x.firstLit[t] = frame + f; }
+        const fr = frame + f; if (fr >= x.tilt.length) break;
+        x.tilt[fr] = t;
+        x.on[fr] = d0 < 0 || d[b + d0] > 0 ? 1 : 0;
       }
     }
     frame += nf;
@@ -99,7 +100,7 @@ async function scanFseq(file, heads, onProgress) {
   }
   return {
     frames: frame, step: h.step,
-    heads: H.map((x) => ({ missing: x.t < 0, lit: Array.from(x.lit), all: Array.from(x.all), firstLit: Array.from(x.firstLit), firstAll: Array.from(x.firstAll) })),
+    heads: H.map((x) => ({ missing: x.t < 0, tilt: x.tilt.subarray(0, Math.min(frame, x.tilt.length)), on: x.on.subarray(0, Math.min(frame, x.on.length)) })),
   };
 }
 
