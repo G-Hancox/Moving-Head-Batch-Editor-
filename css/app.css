@@ -1,0 +1,101 @@
+
+/* Moving Head Batch Editor styles.
+   Layout: one working column — setup on top (folder, heads, limit), then a dense results table built for scanning problems first. */
+:root {
+  --bg: #f2f3f6; --panel: #ffffff; --ink: #151923; --muted: #596173; --line: #dce0e8;
+  --beam: #b5620a; --beam-soft: #f6e6d2; --ok: #1d7448; --ok-soft: #dcefe4;
+  --bad: #b93228; --bad-soft: #f7dfdc; --warn: #8a6100; --warn-soft: #f4ead0;
+  --display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0d1017; --panel: #151a25; --ink: #e7eaf1; --muted: #949db2; --line: #272e3d;
+  --beam: #f4b545; --beam-soft: #3a2c14; --ok: #52c58d; --ok-soft: #15301f;
+  --bad: #ff6f62; --bad-soft: #3b1a17; --warn: #e6b94c; --warn-soft: #352a10; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0d1017; --panel: #151a25; --ink: #e7eaf1; --muted: #949db2; --line: #272e3d;
+  --beam: #f4b545; --beam-soft: #3a2c14; --ok: #52c58d; --ok-soft: #15301f;
+  --bad: #ff6f62; --bad-soft: #3b1a17; --warn: #e6b94c; --warn-soft: #352a10; color-scheme: dark }
+
+* { box-sizing: border-box }
+body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 28px 64px; }
+.wrap { max-width: 1080px; margin: 0 auto; display: grid; gap: 22px; }
+h1, h2 { font-family: var(--display); font-weight: 700; letter-spacing: .01em; text-wrap: balance; margin: 0; line-height: 1.05 }
+h1 { font-size: clamp(2rem, 5vw, 2.9rem) }
+h2 { font-size: 1.45rem }
+p { margin: 0 }
+.lede { color: var(--muted); max-width: 64ch; margin-top: 8px }
+.safe { display: inline-flex; gap: 8px; align-items: center; margin-top: 12px; font-size: .85rem; color: var(--ok); background: var(--ok-soft); padding: 4px 10px; border-radius: 99px; font-weight: 500 }
+.safe::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ok) }
+section.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px; display: grid; gap: 14px; min-width: 0 }
+.step { display: flex; gap: 12px; align-items: baseline }
+.step b { font-family: var(--mono); font-size: .78rem; color: var(--beam); letter-spacing: .08em }
+.row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center }
+.muted { color: var(--muted) }
+.small { font-size: .85rem }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums }
+button, .btn { font: 600 .92rem var(--body); border-radius: 7px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 9px 16px; cursor: pointer }
+button.primary, .btn.primary { background: var(--beam); border-color: var(--beam); color: var(--panel) }
+button:disabled { opacity: .45; cursor: not-allowed }
+button:focus-visible, .btn:focus-within, input:focus-visible { outline: 2px solid var(--beam); outline-offset: 2px }
+.btn input { display: none }
+input[type=number] { font: 500 1rem var(--mono); width: 5.2em; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--ink) }
+input[type=checkbox] { accent-color: var(--beam); width: 16px; height: 16px }
+label.check { display: inline-flex; gap: 8px; align-items: center; cursor: pointer }
+.tablebox { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px }
+table { border-collapse: collapse; width: 100%; font-size: .9rem }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; white-space: nowrap }
+th { font: 600 .72rem var(--body); text-transform: uppercase; letter-spacing: .07em; color: var(--muted); background: var(--bg) }
+tr:last-child td { border-bottom: 0 }
+td.num, th.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums }
+td.name { white-space: normal; min-width: 14em }
+.pill { display: inline-block; font-size: .76rem; font-weight: 600; padding: 2px 9px; border-radius: 99px; white-space: nowrap }
+.pill.ok { background: var(--ok-soft); color: var(--ok) }
+.pill.bad { background: var(--bad-soft); color: var(--bad) }
+.pill.warn { background: var(--warn-soft); color: var(--warn) }
+.pill.dim { background: var(--bg); color: var(--muted); border: 1px solid var(--line) }
+.pill.ex { background: var(--beam-soft); color: var(--beam) }
+.add { font-weight: 600; color: var(--bad) }
+.gauge { position: relative; height: 34px; border-radius: 6px; overflow: hidden; border: 1px solid var(--line);
+  background: linear-gradient(90deg, var(--bad-soft) 0 var(--lo), var(--ok-soft) var(--lo) var(--hi), var(--warn-soft) var(--hi) 100%) }
+.gauge .tick { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--bad) }
+.gauge .tick.hi { background: var(--warn) }
+.gauge span { position: absolute; bottom: 3px; font: 500 .72rem var(--mono); color: var(--muted) }
+.gauge .l0 { left: 6px } .gauge .l255 { right: 6px }
+.gauge .lab { top: 4px; bottom: auto; transform: translateX(6px); color: var(--ink) }
+.limits { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px }
+.limits .field { display: grid; gap: 6px; min-width: 0 }
+.field > span { font-weight: 600 }
+.folders { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px 18px }
+.folders label { min-width: 0 } .folders label span { overflow-wrap: anywhere }
+.bar { height: 6px; background: var(--bg); border-radius: 99px; overflow: hidden; border: 1px solid var(--line) }
+.bar i { display: block; height: 100%; width: 0; background: var(--beam); transition: width .3s }
+.stats { display: flex; flex-wrap: wrap; gap: 10px 28px }
+.stat b { display: block; font: 700 1.7rem/1 var(--display) } .stat span { font-size: .8rem; color: var(--muted) }
+tr.seq { cursor: pointer } tr.seq:hover td { background: var(--bg) }
+tr.detail td { background: var(--bg); padding: 4px 12px 12px }
+tr.detail table { background: var(--panel); border: 1px solid var(--line); border-radius: 6px }
+.note { font-size: .85rem; color: var(--muted); max-width: 70ch }
+.msg { font-size: .9rem; padding: 8px 12px; border-radius: 7px; background: var(--bg); border: 1px solid var(--line) }
+.msg.err { background: var(--bad-soft); color: var(--bad); border-color: transparent }
+@media (prefers-reduced-motion: reduce) { .bar i { transition: none } }
+
+.danger { background: var(--bad) !important; border-color: var(--bad) !important; color: var(--panel) !important }
+.confirm { border: 2px solid var(--bad); background: var(--bad-soft); border-radius: 10px; padding: 18px; display: grid; gap: 12px }
+.confirm h3, .done h3 { margin: 0; font: 700 1.25rem var(--display) }
+.done { border: 2px solid var(--beam); background: var(--beam-soft); border-radius: 10px; padding: 18px; display: grid; gap: 10px }
+.banner { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--beam); color: var(--panel); border-radius: 8px; padding: 10px 14px; font-weight: 600 }
+ol.steps { margin: 0; padding-left: 1.3em; display: grid; gap: 4px }
+input.lift { width: 4.2em }
+.heads8 { display: grid; grid-template-columns: repeat(4, auto); gap: 4px 8px; justify-content: end }
+.heads8 label { display: grid; gap: 1px; font-size: .68rem; color: var(--muted); text-align: left }
+.heads8 input.lift { width: 3.6em; padding: 3px 5px; font-size: .9rem }
+.cant li { margin-bottom: 4px }
+.tag { font: 500 .78rem var(--mono); color: var(--muted) }
+[hidden] { display: none !important }
+html { -webkit-text-size-adjust: 100% }
+body { margin: 0 }
+.stack { display: grid; gap: 14px; min-width: 0 }
+label.check { align-items: flex-start } label.check input { margin-top: 3px; flex: none }

@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Moving Head Batch Editor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="banner" id="renderBanner" hidden></div>
+  <header>
+    <h1>Moving Head Batch Editor</h1>
+    <p class="lede">Scans your rendered xLights sequences, shows which ones drop the moving head beams below the tilt you set, and can add the Additive lift to MH Tilt for you.</p>
+    <span class="safe" id="safeNote">Scanning is read-only. Nothing is changed until you confirm an edit in step 4.</span>
+  </header>
+
+  <section class="panel">
+    <div class="step"><b>STEP 1</b><h2>Pick your show folder</h2></div>
+    <p class="note">Choose <span class="mono">XLIGHTS\Show DIR</span>. The browser asks for permission to view the folder. It only asks to save changes later, if you choose to edit sequences in step 4. Everything stays on this computer.</p>
+    <div class="row">
+      <button class="primary" id="pickBtn" hidden>Choose show folder</button>
+      <label class="btn primary" for="pick" id="pickLabel">Choose show folder<input type="file" id="pick" webkitdirectory directory multiple></label>
+      <span class="muted small" id="pickInfo">No folder chosen yet.</span>
+    </div>
+    <div id="layoutMsg" class="msg" hidden></div>
+    <p class="note" id="fsaNote" hidden>This browser can only read the folder, so step 4 (editing) is turned off. Use Chrome or Edge on your PC to edit sequences.</p>
+  </section>
+
+  <section class="panel">
+    <div class="step"><b>STEP 2</b><h2>Set the limit</h2></div>
+    <p class="note">Tilt is the raw DMX value, 0–255. On your heads a higher value raises the beam, so anything under the lowest value counts as too low. The top limit is optional. Use it if beams also tip too far over the back.</p>
+    <div class="limits">
+      <label class="field" for="minT"><span>Lowest allowed tilt</span><span class="row"><input type="number" id="minT" min="0" max="255" value="60"><span class="muted small">DMX value, applies to every head below unless you override it</span></span></label>
+      <label class="field" for="maxT"><span>Highest allowed tilt</span><span class="row"><input type="number" id="maxT" min="0" max="255" placeholder="off"><span class="muted small">Leave empty to skip</span></span></label>
+    </div>
+    <div class="gauge" id="gauge" aria-hidden="true">
+      <div class="tick" id="tickLo"></div><div class="tick hi" id="tickHi" hidden></div>
+      <span class="l0">0</span><span class="l255">255</span><span class="lab" id="labLo"></span>
+    </div>
+    <label class="check" for="litOnly"><input type="checkbox" id="litOnly" checked> Only count tilt while the beam is on (dimmer above 0)</label>
+    <div class="tablebox">
+      <table>
+        <thead><tr><th>Check</th><th>Head</th><th class="num">Tilt ch</th><th class="num">Dimmer ch</th><th class="num">MH Tilt ch</th><th class="num">Own lowest</th></tr></thead>
+        <tbody id="headRows"></tbody>
+      </table>
+    </div>
+    <p class="note" id="headNote"></p>
+  </section>
+
+  <section class="panel">
+    <div class="step"><b>STEP 3</b><h2>Scan</h2></div>
+    <p class="note">The scan reads the rendered <span class="mono">.fseq</span> file of each sequence, so render first (Tools → Batch Render) if you've changed anything. Big shows take a while. Expect roughly 10–30 seconds per song.</p>
+    <div class="folders" id="folders"><span class="muted small">Folders with sequences show up here after step 1.</span></div>
+    <div class="row">
+      <button class="primary" id="scanBtn" disabled>Scan sequences</button>
+      <button id="stopBtn" hidden>Stop</button>
+      <span class="muted small mono" id="scanInfo"></span>
+    </div>
+    <div class="bar" id="bar" hidden><i id="barFill"></i></div>
+  </section>
+
+  <section class="panel">
+    <div class="row" style="justify-content: space-between">
+      <h2>Results</h2>
+      <div class="row">
+        <label class="check" for="onlyBad"><input type="checkbox" id="onlyBad"> Only show problems</label>
+        <button id="copyBtn">Copy report</button>
+      </div>
+    </div>
+    <div class="stats" id="stats"></div>
+    <div class="tablebox">
+      <table>
+        <thead><tr><th>Sequence</th><th>Status</th><th class="num">Lowest tilt</th><th class="num">Add</th><th class="num">First dip</th><th class="num">Highest after add</th></tr></thead>
+        <tbody id="resRows"></tbody>
+      </table>
+    </div>
+    <p class="note">Click a row to see each head. "Add" is how much the lowest point has to come up to reach your limit. "First dip" is where in the song it first goes too low.</p>
+    <textarea id="copyFallback" hidden readonly style="width:100%;height:8em;font:12px var(--mono)"></textarea>
+  </section>
+
+  <section class="panel" id="fixPanel">
+    <div class="step"><b>STEP 4</b><h2>Fix the low sequences</h2></div>
+    <p class="note">For each sequence you tick, this adds one DMX effect across the whole song on <b class="mono" id="liftRowName">MH Tilt</b> › Strand 1, blended Additive, with DMX1–DMX8 set to the lift for each head. That's the same thing you do by hand. If a sequence already has that lift, its values are raised instead of adding a second one. Your .fseq render files are never touched. You re-render afterwards.</p>
+    <div id="fixEmpty" class="msg">Scan your sequences first. Any that are too low show up here.</div>
+    <div id="fixBody" class="stack" hidden>
+      <div class="limits">
+        <div class="field"><span>How to lift</span><label class="check" for="sameLift"><input type="checkbox" id="sameLift" checked><span class="small">Same amount on all 8 heads (the biggest one needed). Untick to set each head on its own.</span></label></div>
+        <label class="field" for="margin"><span>Extra safety margin</span><span class="row"><input type="number" id="margin" min="0" max="100" value="0"><span class="muted small">added on top of what's needed</span></span></label>
+        <div class="field"><span>Make tilt effects Additive</span><label class="check" for="addAll"><input type="checkbox" id="addAll"><span class="small">Switch each sequence's existing tilt DMX effects to Additive so they add up with the lift</span></label></div>
+      </div>
+      <p class="note">Turn on "Make tilt effects Additive" when the lift doesn't seem to work in a sequence. That happens when the tilt effects on the heads cover the lift. It only changes DMX effects that move the tilt channel, on the head models, groups that hold heads, and MH Tilt's own rows. You can also set it per sequence below.</p>
+      <div class="tablebox">
+        <table>
+          <thead><tr><th>Edit</th><th>Sequence</th><th class="num">Lift now</th><th class="num">Add</th><th class="num">New lift</th><th>Additive</th><th>Notes</th></tr></thead>
+          <tbody id="fixRows"></tbody>
+        </table>
+      </div>
+      <div id="cantBox" hidden>
+        <h3 style="font:700 1.1rem var(--display);margin:6px 0">Needs a hand fix or a fresh render</h3>
+        <ul class="cant small" id="cantList"></ul>
+      </div>
+      <div class="row">
+        <button class="primary" id="reviewBtn" disabled>Review changes</button>
+        <span class="muted small" id="fixInfo"></span>
+      </div>
+      <div class="confirm" id="confirmBox" hidden>
+        <h3>Are you sure you want to edit these sequences?</h3>
+        <p id="confirmSummary"></p>
+        <p class="small">A copy of each .xsq is saved first in <span class="mono" id="backupPath"></span>, so every edit can be undone from here or by copying the file back.</p>
+        <label class="check" for="ckClosed"><input type="checkbox" id="ckClosed"> xLights is closed, or none of these sequences are open in it. If one is open and xLights saves it, your edit gets overwritten.</label>
+        <label class="check" for="ckRender"><input type="checkbox" id="ckRender"> I'll batch render these sequences afterwards. The show plays the .fseq files, so nothing changes until they're re-rendered.</label>
+        <div class="row">
+          <button class="danger" id="applyBtn" disabled>Yes, edit sequences</button>
+          <button id="cancelBtn">Cancel</button>
+        </div>
+      </div>
+      <div class="done" id="doneBox" hidden></div>
+    </div>
+  </section>
+</div>
+
+<script src="js/zstd.js"></script>
+<script src="js/fseq-scan.js"></script>
+<script src="js/layout.js"></script>
+<script src="js/xsq-lift.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
